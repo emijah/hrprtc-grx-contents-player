@@ -4,9 +4,10 @@ import time
 import socket
 import thread
 import random
-import select
+#import select
+from select import cpython_compatible_select as select
 import traceback
-from org.ho.yaml import Yaml
+from org.yaml.snakeyaml import Yaml
 import codecs
 
 import hrpclient
@@ -75,7 +76,7 @@ def help(commandList = commandList_):
 
 def loadList(fname = DEFAULT_COMMANDLIST,  backGround = False, doClean = False):
 	fin = open(fname)
-	comList = Yaml.load(fin)
+	comList = Yaml().load(fin)
 	fin.close()
 	if backGround:
 		thread.start_new_thread(updateActionBuffer, (comList, doClean))
@@ -85,7 +86,7 @@ def loadList(fname = DEFAULT_COMMANDLIST,  backGround = False, doClean = False):
 
 def saveList(fname = DEFAULT_COMMANDLIST, comList = commandList_):
 	fout = open(fname)
-	Yaml.dump(comList, fout)
+	Yaml().dump(comList, fout)
 	fout.close()
 
 def updateActionBuffer(comList = commandList_, doClean = False):
@@ -105,8 +106,9 @@ def makeActionList(fname, timeOffset = 0.0):
 	global playRate_
 	if actionBuffer_.has_key(fname):
 		return actionBuffer_[fname]
+	print 'load: ' + fname
 	fin = open(fname)
-	a = Yaml.load(fin.read())
+	a = Yaml().load(fin.read())
 	fin.close()
 	type = a['type']
 	name = a['name']
@@ -141,7 +143,7 @@ def makeActionList(fname, timeOffset = 0.0):
 
 def execCommand(com):
 	global commandList_ ,systemCommandList_
-
+	
 	if com.strip() == '':
 		return 
 
@@ -150,8 +152,8 @@ def execCommand(com):
 		sendMsgToSeat(msg + '\n')
 		return
 
-	if com.isdigit():
-		com = int(com)
+	#if com.isdigit():
+	#	com = int(com)
 	
 	if commandList_.containsKey(com):
 		com = commandList_[com][0]
@@ -159,16 +161,16 @@ def execCommand(com):
 	elif systemCommandList_.has_key(com):
 		com = systemCommandList_[com][0]
 
-	if os.path.isfile(DEFAULT_SCENARIO_DIR + com):
-		execFile(DEFAULT_SCENARIO_DIR + com)
+	if os.path.isfile(DEFAULT_SCENARIO_DIR + str(com)):
+		execFile(DEFAULT_SCENARIO_DIR + str(com))
 	else:
 		try:
-			if com.endswith(")"):
-				val =  eval(com)
-				if val is not None: 
-					print val
-			else:
-				exec(com)
+			#if com.endswith(")"):
+			#	val =  eval(com)
+			#	if val is not None: 
+			#		print val
+			#else:
+			exec(com)
 		except:
 			traceback.print_exc(file=sys.stdout)
 
@@ -199,20 +201,31 @@ def execFile(fname):
 
 def SocketRecvLoop(host = DEFAULT_HOST, port = DEFAULT_PORT):
 	global clientsock
-	s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-	s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-	s.bind((host, port))
-	s.listen(1)
-	print 'SocketRecvLoop: Waiting for connections...'
-	clientsock, clientaddr = s.accept()
-	print 'SocketRecvLoop: Accept the connection'
 	while interpret_flag:
-		rcvmsg = clientsock.recv(1024)
-		rcvmsg = rcvmsg.rstrip('\n')
-		rcvmsg = rcvmsg.rstrip('\r')
-		print 'Recevied ->[%s]' %(rcvmsg)
-		execCommand(rcvmsg)
-	clientsock.close()
+		s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+		s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+		s.bind((host, port))
+		s.listen(1)
+		while True:
+			print 'SocketRecvLoop: Waiting for connections...'
+			clientsock, clientaddr = s.accept()
+			print 'SocketRecvLoop: Accept the connection'
+			rcvmsg = ''
+			while True:
+				time.sleep(1)
+				r, w, x = select([clientsock,], [], [], 0.01)
+				if len(r) != 0:
+					rcvmsg = clientsock.recv(1024)
+					print "skipping buffered input %s" % rcvmsg
+				
+				rcvmsg = clientsock.recv(1024)
+				if len(rcvmsg) == 0:
+					break
+				rcvmsg = rcvmsg.rstrip('\n')
+				rcvmsg = rcvmsg.rstrip('\r')
+				print 'Recevied ->[%s]' %(rcvmsg)
+				execCommand(rcvmsg)
+			clientsock.close()
 
 def sendMsgToSeat(msg, doShow = True):
 	global clientsock
